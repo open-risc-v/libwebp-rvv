@@ -588,6 +588,10 @@ static int SSE4x4_C(const uint8_t* WEBP_RESTRICT a,
 }
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
+#if HAVE_RVV_KERNELS
+#include "enc_rvv.c"
+#endif
+
 static void Mean16x4_C(const uint8_t* WEBP_RESTRICT ref, uint32_t dc[4]) {
   int k, x, y;
   for (k = 0; k < 4; ++k) {
@@ -841,6 +845,11 @@ WEBP_DSP_INIT_FUNC(VP8EncDspInit) {
       (VP8GetCPUInfo != NULL && VP8GetCPUInfo(kNEON))) {
     VP8EncDspInitNEON();
   }
+#endif
+
+#if HAVE_RVV_KERNELS
+  /* RVV 内核：编译期开关（本工程口径，与 libvpx CONFIG_RVV_SAD 同性质）。 */
+  VP8EncDspInitRVV();
 #endif
 
   assert(VP8ITransform != NULL);
