@@ -1,32 +1,35 @@
-# 性能与正确性日志 —— `media-libs/libwebp`
+# 性能记录（libwebp RVV 移植）
 
-每条记录必须包含：**日期 / 变更 / 内核 / 输入规模 / A / B / 比值 / 是否位精确 / 证据路径**。
-没有 A/B 双数字的记录不算数。
+目标机：RISC-V RVV 板卡（8 核，VLEN=256），gcc 15.2.0。
+输入：512×512 合成 PPM，`cwebp -q {75,90} -m 4`。B 侧 = `baseline`，A 侧 = `src`（仅本内核）。
 
-## 基线（G2，内核关闭）
+## 逐轮记录
 
-| 日期 | 构建 | 用例 | 规模 | A(ms) | B(ms) | 备注 |
-|---|---|---|---|---|---|---|
-|  | riscv64 |  |  |  |  |  |
+| 轮 | 口径 | 内核 | A(ms) | B(ms) | 收益 | 位精确 | 备注 |
+|---|---|---|---|---|---|---|---|
+| 1 | `-march=rv64gcv` 对 `rv64gc`（未控自动向量化） | `SSE16x16`、`SSE16x8` | q75 308 / q90 316 | 162 / 170 | **0.53x（回退）** | 通过（webp 逐字节相同） | 见下：回退来自 gcc 15 的 RVV 自动向量化，不是内核 |
+| 1b | 同上，去掉内核开关（纯 `-march=rv64gcv`） | 无 | q75 309 | 162 | 0.52x | 通过 | 证明 `-march` 本身就会让编码器变慢 |
+| 2 | 两侧都加 `-fno-tree-vectorize` | `SSE16x16`、`SSE16x8` | q75 **154** / q90 **162** | 162 / 171 | **1.05x / 1.06x** | 通过（逐字节相同） | 关掉自动向量化后内核实打实生效；RD 的 SSE 代价函数精确整数，码流不变 |
 
-```
-cpu_probe（目标机）：
-vlen=
-vle_ticks=  vlse_ticks=  vrgather_ticks=  vsetvl_ticks=
-```
+## 结论与口径
 
-## 逐轮记录（G3）
+1. **gcc 15.2 在 `-march=rv64gcv` 下的自动向量化对 libwebp 是负收益**（0.52–0.53x）。
+   凡是「A 档只加 `-march=rv64gcv`、不开内核」的构建，都不能算 RVV 收益，只能算编译器噪声；
+   与 eigen 那一轮（自动向量化把耗时放大 35 倍）是同一类问题。
+2. 本工程的 A/B 口径固定为：`-march=rv64gcv -O2 -fno-tree-vectorize -DHAVE_RVV_KERNELS=1`
+   对 `-march=rv64gc -O2 -fno-tree-vectorize`。这样 A 侧增益只可能来自手写 intrinsics。
+3. 只接 16 宽的 `SSE16x16` / `SSE16x8`；`SSE8x8` / `SSE4x4` 的车道数太少（8/4），
+   `vsetvl` 与装载开销吃满收益，未启用。这与 openh264 的 4x4 结论一致。
 
-| 轮 | 日期 | 内核 | LMUL | 规模 | A(ms) | B(ms) | 收益 | 位精确 | 备注 |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 |  |  |  |  |  |  |  |  |  |
+## 复现
 
-## 收敛分析（G4）
-
-```
-perf top（剩余热点，按占比排序）：
-1.
-2.
-3.
-结论：覆盖度 f=____；停止理由：____
+```bash
+cmake -S baseline -B build/B -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_C_FLAGS="-march=rv64gc -O2 -fno-tree-vectorize" \
+      -DWEBP_BUILD_CWEBP=ON -DBUILD_SHARED_LIBS=OFF && make -C build/B -j8
+cmake -S src -B build/A -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_C_FLAGS="-march=rv64gcv -O2 -fno-tree-vectorize -DHAVE_RVV_KERNELS=1" \
+      -DWEBP_BUILD_CWEBP=ON -DBUILD_SHARED_LIBS=OFF && make -C build/A -j8
+for s in B A; do build/$s/cwebp -quiet -q 75 -m 4 -o /tmp/$s.webp test.ppm; done
+cmp /tmp/B.webp /tmp/A.webp && echo bit-identical
 ```
