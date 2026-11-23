@@ -4,7 +4,7 @@
 - 上游：`webmproject/libwebp` @ `b4254dca32a4fc3b22bbdcc10b1eac2176a9d238`
 - 构建：CMake 静态（`BUILD_SHARED_LIBS=OFF`），两侧同为 `-march=rv64gcv`，
   唯一变量 `-DHAVE_RVV_KERNELS=1`
-- 目标板：SpacemiT K3 / Bianbu，`Linux k3 6.18.3 riscv64`，RVV 1.0
+- 目标板：SpacemiT K3 / <distro>，`Linux k3 6.18.3 riscv64`，RVV 1.0
 
 ## 1. 选型理由
 
