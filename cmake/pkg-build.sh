@@ -3,12 +3,14 @@
 set -euo pipefail
 SRC=$1
 OUT=$2
+MARCH=${3:-rv64gc}
+KERN=${4:-0}
+mkdir -p "${OUT}"
+OUT=$(realpath "${OUT}")
 # EXTRA_C_FLAGS 必须整体作为一个参数传（空格拆分坑，见 libde265/x264/opus）。
-EXTRA_ARGS=()
-if [ -n "${EXTRA_C_FLAGS:-}" ]; then
-  EXTRA_ARGS+=("-DCMAKE_C_FLAGS=${EXTRA_C_FLAGS}")
-  EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=${EXTRA_C_FLAGS}")
-fi
+CF="-march=${MARCH}"
+if [ "${KERN}" = "1" ]; then CF="${CF} -DHAVE_RVV_KERNELS=1"; fi
+EXTRA_ARGS=("-DCMAKE_C_FLAGS=${CF}" "-DCMAKE_CXX_FLAGS=${CF}")
 
 cmake -S "$SRC" -B "$OUT/bld" \
   -DCMAKE_BUILD_TYPE=Release \
